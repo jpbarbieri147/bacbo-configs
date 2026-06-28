@@ -1,0 +1,16 @@
+[Unit]
+Description=BacBo Intelligence — Dispatcher de Sinais Telegram
+After=network.target bacbo.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bacbo
+ExecStart=/opt/bacbo/venv/bin/python /opt/bacbo/sessao_dispatcher.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
