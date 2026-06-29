@@ -145,7 +145,7 @@ def tg_edit(token: str, chat_id: str, message_id: int, text: str) -> bool:
         log.warning(f"Telegram editMessage exception: {e}")
     return False
 
-# ─── Motor de padrões — tradução fiel do bacboAnalytics.ts ───────────────────
+# ─── Motor de padrões  tradução fiel do bacboAnalytics.ts ───────────────────
 
 TARGETS      = ["blue", "red"]
 RESULT_ORDER = ["blue", "red", "tie"]
@@ -192,7 +192,7 @@ def analyze_patterns(rounds: list, settings: dict) -> list:
     min_acc      = float(settings.get("minAccuracy", 85))
     ranking_mode = settings.get("rankingMode", "score")
 
-    # Modo "all" — roda as 3 bases e une
+    # Modo "all"  roda as 3 bases e une
     if basis == "all":
         result = []
         for b in ["colors", "numbers", "hybrid"]:
@@ -363,8 +363,8 @@ def build_entry_message(pattern: dict, gale_status: str) -> str:
 
     status_map = {
         "sg":       "🔄 *Aguardando SG...*",
-        "g1":       "🔄 *SG não converteu  Aguardando G1...*",
-        "g2":       "🔄 *G1 não converteu  Aguardando G2...*",
+        "g1":       "🔄 *SG não converteu — Aguardando G1...*",
+        "g2":       "🔄 *G1 não converteu — Aguardando G2...*",
         "g3":       "🔄 *G2 não converteu — Aguardando G3...*",
         "green_sg": "✅ *GREEN SG*",
         "green_g1": "✅ *GREEN G1*",
@@ -374,7 +374,7 @@ def build_entry_message(pattern: dict, gale_status: str) -> str:
         "tie_g1":   "✅ *GREEN EMPATE G1*",
         "tie_g2":   "✅ *GREEN EMPATE G2*",
         "tie_g3":   "✅ *GREEN EMPATE G3*",
-        "loss":     "❌ *LOSS  Siga a gestão!*",
+        "loss":     "❌ *LOSS — Siga a gestão!*",
     }
     status_line = status_map.get(gale_status, "🔄 *Aguardando...*")
 
@@ -410,7 +410,7 @@ class GateState:
 def should_dispatch(filters: dict, history: list, gate: GateState, now_ms: int) -> bool:
     """
     Tradução fiel de shouldDispatch() do telegramService.ts.
-    history: lista de dicts com {id, result} — mais antigo primeiro.
+    history: lista de dicts com {id, result}  mais antigo primeiro.
     Lógica E: todos os filtros ativos precisam liberar.
     """
     time_ok   = True
@@ -552,7 +552,7 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
                         estado.pending = None
                         break
 
-                    # Errou — consome gale
+                    # Errou  consome gale
                     gale_count += 1
 
                     if gale_count > gale_level:
@@ -571,7 +571,7 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
                         estado.pending = None
                         break
 
-                    # Ainda tem gale  edita MSG 1
+                    # Ainda tem gale — edita MSG 1
                     next_gale = ["sg","g1","g2","g3"][min(gale_count, 3)]
                     if pending.get("current_gale") != next_gale and pending.get("message_id"):
                         pending["current_gale"] = next_gale
@@ -589,6 +589,13 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
         # ── Detectar novo padrão ───────────────────────────────────────────
         patterns = analyze_patterns(sample, settings)
         alerts   = get_current_alerts(sample, patterns, settings.get("basis", "numbers"))
+
+        # Limpa resolved_keys de padroes que NAO estao mais ativos no tail.
+        # Espelha o useEffect do useTelegramMonitor.ts.
+        _active_keys = {
+            f"{a['basis']}:{'|'.join(a['seq_labels'])}" for a in alerts
+        }
+        estado.resolved_keys = {k for k in estado.resolved_keys if k in _active_keys}
 
         if not alerts:
             continue
