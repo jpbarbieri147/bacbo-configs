@@ -52,8 +52,9 @@ def load_rounds(limit: int = 12000) -> list:
     with get_db() as conn:
         rows = conn.execute(
             "SELECT gameId, winner, score, created_at "
-            "FROM rounds ORDER BY created_at ASC LIMIT ?", (limit,)
+            "FROM rounds ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
+        rows = list(reversed(rows))
     result = []
     for r in rows:
         w = (r["winner"] or "").strip()
@@ -315,7 +316,7 @@ def get_sample(rounds: list, sample_size: int) -> list:
     """Tradução fiel de getSample()."""
     return rounds[max(0, len(rounds) - sample_size):]
 
-# ─── Mensagens — tradução fiel do telegramService.ts ─────────────────────────
+# ─── Mensagens  tradução fiel do telegramService.ts ─────────────────────────
 
 # Emojis por resultado (igual ao TG_DOTS do telegramService.ts)
 TG_DOTS = {"blue": "🔵", "red": "🔴", "tie": "🟡"}
@@ -362,8 +363,8 @@ def build_entry_message(pattern: dict, gale_status: str) -> str:
 
     status_map = {
         "sg":       "🔄 *Aguardando SG...*",
-        "g1":       "🔄 *SG não converteu — Aguardando G1...*",
-        "g2":       "🔄 *G1 não converteu — Aguardando G2...*",
+        "g1":       "🔄 *SG não converteu  Aguardando G1...*",
+        "g2":       "🔄 *G1 não converteu  Aguardando G2...*",
         "g3":       "🔄 *G2 não converteu — Aguardando G3...*",
         "green_sg": "✅ *GREEN SG*",
         "green_g1": "✅ *GREEN G1*",
@@ -373,7 +374,7 @@ def build_entry_message(pattern: dict, gale_status: str) -> str:
         "tie_g1":   "✅ *GREEN EMPATE G1*",
         "tie_g2":   "✅ *GREEN EMPATE G2*",
         "tie_g3":   "✅ *GREEN EMPATE G3*",
-        "loss":     "❌ *LOSS — Siga a gestão!*",
+        "loss":     "❌ *LOSS  Siga a gestão!*",
     }
     status_line = status_map.get(gale_status, "🔄 *Aguardando...*")
 
@@ -399,7 +400,7 @@ def build_result_message(result_type: str) -> str:
         return f"✅ *GREEN EMPATE {gale}*"
     return f"✅ *GREEN {result_type.upper()}*"
 
-# ─── Filtros — tradução fiel de shouldDispatch() do telegramService.ts ───────
+# ─── Filtros  tradução fiel de shouldDispatch() do telegramService.ts ───────
 
 class GateState:
     def __init__(self):
@@ -457,7 +458,8 @@ class SessionState:
     def __init__(self):
         self.initialized        = False
         self.monitor_start_len  = 0      # len(sample) quando inicializou
-        self.last_sample_len    = 0      # para detectar nova rodada
+        self.last_sample_len    = 0      # (legado)
+        self.last_round_id      = None   # id da ultima rodada processada
         self.resolved_keys      = set()  # alert_keys já resolvidos
         self.pending            = None   # sinal aguardando resultado
         self.gate               = GateState()
@@ -498,20 +500,30 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
         if not estado.initialized:
             estado.monitor_start_len = len(sample)
             estado.last_sample_len   = len(sample)
+            estado.last_round_id     = sample[-1]["id"] if sample else None
             estado.initialized       = True
             log.info(f"[{session_id[:8]}] Inicializado com {len(sample)} rodadas "
                      f"| {settings.get('basis')} G{settings.get('galeLevel')} "
                      f"{settings.get('minAccuracy')}% {settings.get('minOccurrences')}occ")
             continue
 
-        # ── Nada novo desde o último ciclo ────────────────────────────────
-        if len(sample) == estado.last_sample_len:
+        # ── Nada novo desde o último ciclo (detecta por ID da última rodada) ──
+        current_last_id = sample[-1]["id"] if sample else None
+        if current_last_id == estado.last_round_id:
             continue
 
         # ── Verificar resultado do sinal pendente ─────────────────────────
         if estado.pending:
             pending       = estado.pending
-            result_rounds = sample[pending["result_start_idx"]:]
+            sig_id = pending.get("signal_round_id")
+            if sig_id is None:
+                result_rounds = []
+            else:
+                _ids = [r["id"] for r in sample]
+                if sig_id in _ids:
+                    result_rounds = sample[_ids.index(sig_id) + 1:]
+                else:
+                    result_rounds = []
 
             if result_rounds:
                 target     = pending["pattern"]["target"]
@@ -559,7 +571,7 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
                         estado.pending = None
                         break
 
-                    # Ainda tem gale — edita MSG 1
+                    # Ainda tem gale  edita MSG 1
                     next_gale = ["sg","g1","g2","g3"][min(gale_count, 3)]
                     if pending.get("current_gale") != next_gale and pending.get("message_id"):
                         pending["current_gale"] = next_gale
@@ -568,8 +580,9 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
                         log.info(f"[{session_id[:8]}] Editado → {next_gale.upper()}")
 
         estado.last_sample_len = len(sample)
+        estado.last_round_id   = current_last_id
 
-        # Sinal pendente ainda em aberto — aguarda resultado
+        # Sinal pendente ainda em aberto  aguarda resultado
         if estado.pending:
             continue
 
@@ -584,12 +597,6 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
         alert_key = f"{alert['basis']}:{'|'.join(alert['seq_labels'])}"
 
         if alert_key in estado.resolved_keys:
-            continue
-
-        # Sequência deve ter começado APÓS a inicialização
-        seq_len       = len(alert["seq_labels"])
-        seq_first_idx = len(sample) - seq_len
-        if seq_first_idx < estado.monitor_start_len:
             continue
 
         # Aplicar filtros
@@ -609,6 +616,7 @@ def ciclo(all_rounds: list, canais: dict, links: list, all_settings: dict):
                 "alert_key":        alert_key,
                 "message_id":       mid,
                 "result_start_idx": len(sample),
+                "signal_round_id":  sample[-1]["id"] if sample else None,
                 "current_gale":     "sg",
             }
             log.info(f"[{session_id[:8]}] Sinal enviado → {alert['target']} "
